@@ -30,32 +30,16 @@ jobs:
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
 
-      - name: 🔍 Locate .xcodeproj and set PROJECT_PATH
+      - name: 📋 Show environment
         run: |
-          # Busca o .xcodeproj em até 3 níveis de profundidade
-          PROJ=$(find . -maxdepth 3 -name "*.xcodeproj" | head -1)
-          if [ -z "$PROJ" ]; then
-            echo "❌ Nenhum .xcodeproj encontrado. Estrutura do repo:"
-            find . -maxdepth 4 -not -path '*/.git/*' | sort
-            exit 1
-          fi
-          echo "✅ Projeto encontrado: $PROJ"
-          # Exporta para os próximos steps via GITHUB_ENV
-          echo "PROJECT_PATH=$PROJ" >> "$GITHUB_ENV"
           xcodebuild -version
-          xcodebuild -project "$PROJ" -list
+          swift --version
+          find . -maxdepth 2 -name "Package.swift" -o -name "*.xcodeproj" | sort
 
-      - name: 📦 Resolve Swift Package dependencies
-        run: |
-          xcodebuild -resolvePackageDependencies \
-            -project "$PROJECT_PATH" \
-            -scheme  "${{ env.SCHEME }}"
-
-      - name: 🔨 Build
+      - name: 🔨 Build (Swift Package)
         run: |
           set -o pipefail
           xcodebuild build \
-            -project     "$PROJECT_PATH" \
             -scheme      "${{ env.SCHEME }}" \
             -destination "${{ env.DESTINATION }}" \
             -configuration Debug \
@@ -66,10 +50,8 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild test \
-            -project     "$PROJECT_PATH" \
             -scheme      "${{ env.SCHEME }}" \
             -destination "${{ env.DESTINATION }}" \
-            -configuration Debug \
             -resultBundlePath TestResults.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             | xcpretty --color
@@ -120,10 +102,10 @@ jobs:
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
 
-      - name: 🔍 Locate .xcodeproj
+      - name: ⚙️ Install XcodeGen & generate .xcodeproj
         run: |
-          PROJ=$(find . -maxdepth 3 -name "*.xcodeproj" | head -1)
-          echo "PROJECT_PATH=$PROJ" >> "$GITHUB_ENV"
+          brew install xcodegen
+          xcodegen generate --spec project.yml
 
       - name: 🔐 Import Code Signing Certificate
         env:
@@ -151,7 +133,7 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild archive \
-            -project     "$PROJECT_PATH" \
+            -project     ImoveisApp.xcodeproj \
             -scheme      "${{ env.SCHEME }}" \
             -archivePath "$RUNNER_TEMP/ImoveisApp.xcarchive" \
             -configuration Release \
@@ -195,4 +177,3 @@ jobs:
           fields: repo,message,commit,author,action,eventName,ref,workflow
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      

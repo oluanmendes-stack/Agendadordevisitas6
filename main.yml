@@ -6,21 +6,17 @@ on:
   pull_request:
     branches: [ "main" ]
 
-# ── Variáveis de ambiente globais ────────────────────────────────────
-# PROJECT_PATH: caminho para o .xcodeproj relativo à raiz do repo.
-# Ajuste se a sua estrutura for diferente (ex: "MyApp/MyApp.xcodeproj").
 env:
-  SCHEME:       ImoveisApp
-  PROJECT_PATH: ImoveisApp.xcodeproj
-  SWIFT_DIR:    ImoveisApp
-  DESTINATION:  "platform=iOS Simulator,name=iPhone 15 Pro,OS=17.5"
+  SCHEME: ImoveisApp
+  SWIFT_DIR: ImoveisApp
+  DESTINATION: "platform=iOS Simulator,name=iPhone 15 Pro,OS=17.5"
   XCODE_VERSION: "15.4"
 
 jobs:
 
-  # ───────────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────────
   # JOB 1 — Build & Test
-  # ───────────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────────
   build-and-test:
     name: 🔨 Build & Test
     runs-on: macos-14
@@ -34,27 +30,34 @@ jobs:
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
 
-      - name: 📋 Diagnostics — Xcode version & project structure
+      - name: 🔍 Locate .xcodeproj and set PROJECT_PATH
         run: |
+          # Busca o .xcodeproj em até 3 níveis de profundidade
+          PROJ=$(find . -maxdepth 3 -name "*.xcodeproj" | head -1)
+          if [ -z "$PROJ" ]; then
+            echo "❌ Nenhum .xcodeproj encontrado. Estrutura do repo:"
+            find . -maxdepth 4 -not -path '*/.git/*' | sort
+            exit 1
+          fi
+          echo "✅ Projeto encontrado: $PROJ"
+          # Exporta para os próximos steps via GITHUB_ENV
+          echo "PROJECT_PATH=$PROJ" >> "$GITHUB_ENV"
           xcodebuild -version
-          echo "── Estrutura do repositório ──"
-          find . -maxdepth 3 \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) | sort
-          echo "── Listando scheme do projeto ──"
-          xcodebuild -project "${{ env.PROJECT_PATH }}" -list 2>&1 || true
+          xcodebuild -project "$PROJ" -list
 
       - name: 📦 Resolve Swift Package dependencies
         run: |
           xcodebuild -resolvePackageDependencies \
-            -project "${{ env.PROJECT_PATH }}" \
+            -project "$PROJECT_PATH" \
             -scheme  "${{ env.SCHEME }}"
 
       - name: 🔨 Build
         run: |
           set -o pipefail
           xcodebuild build \
-            -project      "${{ env.PROJECT_PATH }}" \
-            -scheme       "${{ env.SCHEME }}" \
-            -destination  "${{ env.DESTINATION }}" \
+            -project     "$PROJECT_PATH" \
+            -scheme      "${{ env.SCHEME }}" \
+            -destination "${{ env.DESTINATION }}" \
             -configuration Debug \
             CODE_SIGNING_ALLOWED=NO \
             | xcpretty --color
@@ -63,9 +66,9 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild test \
-            -project      "${{ env.PROJECT_PATH }}" \
-            -scheme       "${{ env.SCHEME }}" \
-            -destination  "${{ env.DESTINATION }}" \
+            -project     "$PROJECT_PATH" \
+            -scheme      "${{ env.SCHEME }}" \
+            -destination "${{ env.DESTINATION }}" \
             -configuration Debug \
             -resultBundlePath TestResults.xcresult \
             CODE_SIGNING_ALLOWED=NO \
@@ -80,9 +83,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # ───────────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────────
   # JOB 2 — SwiftLint
-  # ───────────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────────
   lint:
     name: 🔍 SwiftLint
     runs-on: macos-14
@@ -92,8 +95,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 🔍 Run SwiftLint
-        # --path aponta para a pasta com os .swift
-        # Também respeita o .swiftlint.yml na raiz do repo
         run: |
           brew install swiftlint
           swiftlint lint \
@@ -101,9 +102,9 @@ jobs:
             --reporter github-actions-logging \
             --strict
 
-  # ───────────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────────
   # JOB 3 — Archive & Export IPA (apenas na main)
-  # ───────────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────────
   archive:
     name: 📦 Archive & Export IPA
     runs-on: macos-14
@@ -119,23 +120,25 @@ jobs:
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
 
+      - name: 🔍 Locate .xcodeproj
+        run: |
+          PROJ=$(find . -maxdepth 3 -name "*.xcodeproj" | head -1)
+          echo "PROJECT_PATH=$PROJ" >> "$GITHUB_ENV"
+
       - name: 🔐 Import Code Signing Certificate
         env:
-          BUILD_CERTIFICATE_BASE64:      ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
-          P12_PASSWORD:                  ${{ secrets.P12_PASSWORD }}
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
           BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
-          KEYCHAIN_PASSWORD:             ${{ secrets.KEYCHAIN_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
-
-          echo "$BUILD_CERTIFICATE_BASE64" \
-            | base64 --decode -o $RUNNER_TEMP/cert.p12
-          echo "$BUILD_PROVISION_PROFILE_BASE64" \
-            | base64 --decode -o $RUNNER_TEMP/profile.mobileprovision
+          echo "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $RUNNER_TEMP/cert.p12
+          echo "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o $RUNNER_TEMP/profile.mobileprovision
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain  -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security import $RUNNER_TEMP/cert.p12 \
             -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
@@ -148,7 +151,7 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild archive \
-            -project     "${{ env.PROJECT_PATH }}" \
+            -project     "$PROJECT_PATH" \
             -scheme      "${{ env.SCHEME }}" \
             -archivePath "$RUNNER_TEMP/ImoveisApp.xcarchive" \
             -configuration Release \
@@ -158,9 +161,9 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild -exportArchive \
-            -archivePath     "$RUNNER_TEMP/ImoveisApp.xcarchive" \
+            -archivePath        "$RUNNER_TEMP/ImoveisApp.xcarchive" \
             -exportOptionsPlist ExportOptions.plist \
-            -exportPath      "$RUNNER_TEMP/ipa" \
+            -exportPath         "$RUNNER_TEMP/ipa" \
             | xcpretty --color
 
       - name: 📦 Upload IPA artifact
@@ -174,9 +177,9 @@ jobs:
         if: always()
         run: security delete-keychain $RUNNER_TEMP/build.keychain || true
 
-  # ───────────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────────
   # JOB 4 — Notificação de Status
-  # ───────────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────────
   notify:
     name: 📣 Notify
     runs-on: ubuntu-latest

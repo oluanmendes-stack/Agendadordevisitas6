@@ -1,19 +1,33 @@
+// swift-tools-version: 5.9
 import PackageDescription
 
 let package = Package(
-    name: "AgendadorDeVisitas",
+    name: "ImoveisApp",
     platforms: [
-        .iOS(.v14)
+        .iOS(.v17)
     ],
     products: [
-        .executable(name: "AgendadorDeVisitas", targets: ["AgendadorDeVisitas"])
+        .library(
+            name: "ImoveisApp",
+            targets: ["ImoveisApp"]
+        )
     ],
-    dependencies: [],
     targets: [
-        .executableTarget(
-            name: "AgendadorDeVisitas",
-            dependencies: [],
-            path: "Sources/AgendadorDeVisitas"
+        .target(
+            name: "ImoveisApp",
+            path: "ImoveisApp",
+            exclude: ["Info.plist", "ImoveisApp.entitlements"],
+            resources: [
+                .process("Assets.xcassets")
+            ],
+            swiftSettings: [
+                .enableExperimentalFeature("StrictConcurrency")
+            ]
+        ),
+        .testTarget(
+            name: "ImoveisAppTests",
+            dependencies: ["ImoveisApp"],
+            path: "ImoveisAppTests"
         )
     ]
 )

@@ -4,6 +4,16 @@
 import SwiftUI
 import SwiftData
 
+// MARK: - Tab item model (evita large_tuple)
+
+private struct TabItem {
+    let icon: String
+    let label: String
+    let active: Bool
+}
+
+// MARK: - ContentView
+
 struct ContentView: View {
 
     @Environment(\.modelContext) private var modelContext
@@ -17,18 +27,18 @@ struct ContentView: View {
 
     private var filtradas: [Visita] {
         visitas
-            .filter { v in
+            .filter { visita in
                 switch filtro {
                 case .todas:    return true
-                case .hoje:     return v.isHoje
-                case .proximas: return !v.isPassado
-                case .passadas: return v.isPassado
+                case .hoje:     return visita.isHoje
+                case .proximas: return !visita.isPassado
+                case .passadas: return visita.isPassado
                 }
             }
-            .filter { v in
+            .filter { visita in
                 guard !search.isEmpty else { return true }
-                return v.endereco.localizedCaseInsensitiveContains(search)
-                    || v.anotacoes.localizedCaseInsensitiveContains(search)
+                return visita.endereco.localizedCaseInsensitiveContains(search)
+                    || visita.anotacoes.localizedCaseInsensitiveContains(search)
             }
     }
 
@@ -49,10 +59,10 @@ struct ContentView: View {
                             ForEach(filtradas) { visita in
                                 VisitaCardView(
                                     visita: visita,
-                                    onEdit:   { editVisita = visita },
+                                    onEdit: { editVisita = visita },
                                     onDelete: { deletar(visita) },
-                                    onMap:    { abrirMapa(visita) },
-                                    onNotif:  { toggleNotif(visita) }
+                                    onMap: { abrirMapa(visita) },
+                                    onNotif: { toggleNotif(visita) }
                                 )
                                 .padding(.horizontal, 14)
                             }
@@ -77,17 +87,17 @@ struct ContentView: View {
                 salvar(dados: dados, editando: nil)
             }
         }
-        .sheet(item: $editVisita) { v in
-            VisitaFormView(mode: .editar(v)) { dados in
-                salvar(dados: dados, editando: v)
+        .sheet(item: $editVisita) { visitaParaEditar in
+            VisitaFormView(mode: .editar(visitaParaEditar)) { dados in
+                salvar(dados: dados, editando: visitaParaEditar)
             }
         }
-        .onAppear { }
         .task { await NotificationManager.shared.checkAuthorizationStatus() }
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: toast?.id)
     }
 
     // MARK: - Header
+
     private var headerView: some View {
         VStack(spacing: 0) {
             // Status bar mock
@@ -113,7 +123,8 @@ struct ContentView: View {
                     Text("Visitas")
                         .font(.system(size: 28, weight: .heavy, design: .rounded))
                         .foregroundStyle(Color.label)
-                    Text("\(visitas.count) imóvel\(visitas.count != 1 ? "s" : "") agendado\(visitas.count != 1 ? "s" : "")")
+                    let plural = visitas.count != 1
+                    Text("\(visitas.count) imóvel\(plural ? "s" : "") agendado\(plural ? "s" : "")")
                         .font(.system(size: 13))
                         .foregroundStyle(Color.secondaryLabel)
                 }
@@ -123,8 +134,12 @@ struct ContentView: View {
                         Circle()
                             .fill(
                                 LinearGradient(
-                                    colors: [Color.brandBlue, Color(red: 0, green: 0.333, blue: 0.831)],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                    colors: [
+                                        Color.brandBlue,
+                                        Color(red: 0, green: 0.333, blue: 0.831)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
                                 )
                             )
                             .frame(width: 40, height: 40)
@@ -164,13 +179,13 @@ struct ContentView: View {
             // Filtros
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
-                    ForEach(FiltroVisitas.allCases, id: \.self) { f in
+                    ForEach(FiltroVisitas.allCases, id: \.self) { opcao in
                         FilterPillView(
-                            filtro: f,
-                            selected: filtro == f,
-                            badge: f == .hoje ? totalHoje : 0
+                            filtro: opcao,
+                            selected: filtro == opcao,
+                            badge: opcao == .hoje ? totalHoje : 0
                         ) {
-                            withAnimation(.spring(response: 0.25)) { filtro = f }
+                            withAnimation(.spring(response: 0.25)) { filtro = opcao }
                         }
                     }
                 }
@@ -179,17 +194,16 @@ struct ContentView: View {
             .padding(.bottom, 14)
         }
         .background(Color.white)
-        .overlay(alignment: .bottom) {
-            Divider()
-        }
+        .overlay(alignment: .bottom) { Divider() }
     }
 
     // MARK: - Tab bar
+
     private var tabBar: some View {
-        let tabs: [(icon: String, label: String, active: Bool)] = [
-            (icon: "house.fill", label: "Visitas", active: true),
-            (icon: "calendar",   label: "Agenda",  active: false),
-            (icon: "map",        label: "Mapa",    active: false)
+        let tabs: [TabItem] = [
+            TabItem(icon: "house.fill", label: "Visitas", active: true),
+            TabItem(icon: "calendar", label: "Agenda", active: false),
+            TabItem(icon: "map", label: "Mapa", active: false)
         ]
         return HStack {
             ForEach(tabs, id: \.label) { tab in
@@ -212,17 +226,14 @@ struct ContentView: View {
     }
 
     // MARK: - Empty state
+
     private var emptyState: some View {
         VStack(spacing: 12) {
             Text("🏠").font(.system(size: 48))
-            Text(filtro == .hoje ? "Nada para hoje"
-                 : filtro == .proximas ? "Sem visitas futuras"
-                 : "Nenhuma visita encontrada")
+            Text(emptyTitle)
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(Color(red: 0.235, green: 0.235, blue: 0.263))
-            Text(filtro == .todas
-                 ? "Toque em + para agendar sua primeira visita"
-                 : "Tente outro filtro ou agende uma nova visita")
+            Text(emptySubtitle)
                 .font(.system(size: 14))
                 .foregroundStyle(Color.secondaryLabel)
                 .multilineTextAlignment(.center)
@@ -231,16 +242,31 @@ struct ContentView: View {
         .padding(.horizontal, 40)
     }
 
+    private var emptyTitle: String {
+        switch filtro {
+        case .hoje:     return "Nada para hoje"
+        case .proximas: return "Sem visitas futuras"
+        default:        return "Nenhuma visita encontrada"
+        }
+    }
+
+    private var emptySubtitle: String {
+        filtro == .todas
+            ? "Toque em + para agendar sua primeira visita"
+            : "Tente outro filtro ou agende uma nova visita"
+    }
+
     // MARK: - Actions
+
     private func salvar(dados: VisitaDados, editando: Visita?) {
         if let visitaEditando = editando {
             NotificationManager.shared.cancelarNotificacao(para: visitaEditando.id)
-            visitaEditando.endereco = dados.endereco
-            visitaEditando.bairro = dados.bairro
-            visitaEditando.cidade = dados.cidade
-            visitaEditando.dataHora = dados.dataHora
+            visitaEditando.endereco    = dados.endereco
+            visitaEditando.bairro      = dados.bairro
+            visitaEditando.cidade      = dados.cidade
+            visitaEditando.dataHora    = dados.dataHora
             visitaEditando.precoImovel = dados.preco
-            visitaEditando.anotacoes = dados.anotacoes
+            visitaEditando.anotacoes   = dados.anotacoes
             if dados.notificacao {
                 visitaEditando.notificacaoAgendada =
                     NotificationManager.shared.agendarNotificacao(para: visitaEditando)
@@ -276,49 +302,58 @@ struct ContentView: View {
         showToast("🗑️ Visita removida")
     }
 
-    private func abrirMapa(_ v: Visita) {
-        guard let url = v.mapsURL, UIApplication.shared.canOpenURL(url) else { return }
+    private func abrirMapa(_ visita: Visita) {
+        guard let url = visita.mapsURL,
+              UIApplication.shared.canOpenURL(url) else { return }
         UIApplication.shared.open(url)
         showToast("📍 Abrindo Apple Maps...")
     }
 
-    private func toggleNotif(_ v: Visita) {
-        if v.notificacaoAgendada {
-            NotificationManager.shared.cancelarNotificacao(para: v.id)
-            v.notificacaoAgendada = false
+    private func toggleNotif(_ visita: Visita) {
+        if visita.notificacaoAgendada {
+            NotificationManager.shared.cancelarNotificacao(para: visita.id)
+            visita.notificacaoAgendada = false
             showToast("🔕 Lembrete desativado")
         } else {
-            v.notificacaoAgendada = NotificationManager.shared.agendarNotificacao(para: v)
+            visita.notificacaoAgendada =
+                NotificationManager.shared.agendarNotificacao(para: visita)
             showToast("🔔 Lembrete ativado para 1h antes!")
         }
     }
 
-    private func showToast(_ msg: String) {
-        withAnimation { toast = ToastData(message: msg) }
+    private func showToast(_ message: String) {
+        withAnimation { toast = ToastData(message: message) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
             withAnimation { toast = nil }
         }
     }
-
 }
 
 // MARK: - Supporting types
 
 enum FiltroVisitas: String, CaseIterable {
-    case todas = "Todas", hoje = "Hoje", proximas = "Próximas", passadas = "Passadas"
+    case todas = "Todas"
+    case hoje = "Hoje"
+    case proximas = "Próximas"
+    case passadas = "Passadas"
 }
 
 struct VisitaDados {
-    var endereco: String; var bairro: String; var cidade: String
-    var dataHora: Date;   var preco: Double
-    var anotacoes: String; var notificacao: Bool
+    var endereco: String
+    var bairro: String
+    var cidade: String
+    var dataHora: Date
+    var preco: Double
+    var anotacoes: String
+    var notificacao: Bool
 }
 
 struct ToastData: Identifiable, Equatable {
-    let id = UUID(); let message: String
+    let id = UUID()
+    let message: String
 }
 
-// MARK: - Filter Pill
+// MARK: - FilterPillView
 
 struct FilterPillView: View {
     let filtro: FiltroVisitas
@@ -335,30 +370,36 @@ struct FilterPillView: View {
                 if badge > 0 {
                     Text("\(badge)")
                         .font(.system(size: 10, weight: .heavy))
-                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
                         .background(selected ? Color.white.opacity(0.3) : Color.brandOrange)
                         .foregroundStyle(.white)
                         .clipShape(Capsule())
                 }
             }
-            .padding(.horizontal, 14).padding(.vertical, 7)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
             .background(selected ? Color.brandBlue : Color.pillBackground)
-            .foregroundStyle(selected ? .white : Color(red: 0.388, green: 0.388, blue: 0.400))
+            .foregroundStyle(
+                selected ? .white : Color(red: 0.388, green: 0.388, blue: 0.400)
+            )
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
     }
 }
 
-// MARK: - Toast
+// MARK: - ToastView
 
 struct ToastView: View {
     let data: ToastData
+
     var body: some View {
         Text(data.message)
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(.white)
-            .padding(.horizontal, 20).padding(.vertical, 10)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
             .background(Color(red: 0.11, green: 0.11, blue: 0.12))
             .clipShape(Capsule())
             .shadow(color: .black.opacity(0.2), radius: 12)
@@ -367,4 +408,3 @@ struct ToastView: View {
             .allowsHitTesting(false)
     }
 }
-
